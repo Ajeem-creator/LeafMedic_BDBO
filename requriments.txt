@@ -9,4 +9,8 @@ streamlit
 librosa
 protobuf==3.20.3
 plotly>=5.20.0
+<<<<<<< HEAD
 Pillow>=10.0.0
+=======
+Pillow>=10.0.0
+>>>>>>> 85f2afbc43a9a608b1732f480d04ef87f1a5a96a
