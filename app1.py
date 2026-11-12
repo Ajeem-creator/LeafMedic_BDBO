@@ -148,10 +148,10 @@ html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Model Loading (Python 3.9 & Keras Compatibility Patches)
+# Model Loading (with Keras 3 compatibility fix)
 # ─────────────────────────────────────────────────────────────────────────────
 def _patch_keras_layer_from_config():
-    """Ensure Keras does not fail on quantization_config: None from saved configs."""
+    """Ensure Keras 3+ does not fail on quantization_config: None from saved configs."""
     try:
         import keras
         orig_from_config = keras.layers.Layer.from_config
@@ -171,7 +171,7 @@ _patch_keras_layer_from_config()
 
 
 def _fix_keras_archive(src, dst):
-    """Strip quantization_config from .keras zip archive for backward compatibility."""
+    """Strip quantization_config from .keras zip to fix Keras 3+ compat."""
     if os.path.exists(dst):
         return dst
     if not os.path.exists(src):
@@ -212,10 +212,24 @@ def load_all():
     import sys
     import keras
 
+    # Check for Keras 3+ requirement in Python 3.11 environment
+    try:
+        k_major = int(keras.__version__.split(".")[0])
+        if k_major < 3:
+            raise RuntimeError(
+                f"Keras version {keras.__version__} is incompatible (Keras 3.0+ required).\n\n"
+                f"The models were trained and saved in Keras 3 (.keras) format, which Keras 2 cannot open.\n\n"
+                f"Currently using Python at:\n{sys.executable}\n\n"
+                f"SOLUTION: Please upgrade TensorFlow and Keras to version 3.0+ in your Python 3.11 environment:\n"
+                f"pip install --upgrade tensorflow keras"
+            )
+    except (ValueError, IndexError):
+        pass
+
     _patch_keras_layer_from_config()
 
     cnn_compat = os.path.join(BASE_DIR, "best_leaf_disease_model_compat.keras")
-    cnn_orig = os.path.join(BASE_DIR, "best_leaf_disease_model.h5")
+    cnn_orig = os.path.join(BASE_DIR, "best_leaf_disease_model.keras")
     cnn_path = cnn_compat if os.path.exists(cnn_compat) else _fix_keras_archive(cnn_orig, cnn_compat)
     if not os.path.exists(cnn_path):
         cnn_path = cnn_orig
@@ -226,7 +240,6 @@ def load_all():
     if not os.path.exists(dbo_path):
         dbo_path = dbo_orig
 
-    # Load models using standard Keras API compatible with Python 3.9
     cnn_model = keras.models.load_model(cnn_path)
     dbo_model = keras.models.load_model(dbo_path)
 
@@ -240,16 +253,14 @@ def load_all():
                 break
         except (AttributeError, TypeError):
             continue
-            
     if feat_layer is None:
         raise RuntimeError(
             "Could not find the 256-D GAP feature layer in the CNN model. "
             "Check that the correct model file is used."
         )
-        
     feat_ext = keras.models.Model(inputs=cnn_model.input, outputs=feat_layer.output)
 
-    with open(os.path.join(BASE_DIR, "class_names.json"), "r") as f:
+    with open(os.path.join(BASE_DIR, "class_names.json")) as f:
         class_names = json.load(f)
 
     dbo_indices = np.load(os.path.join(BASE_DIR, "DBO_feature_indices.npy"))
@@ -258,7 +269,7 @@ def load_all():
     hist_path = os.path.join(BASE_DIR, "training_hist (1).json")
     hist = {}
     if os.path.exists(hist_path):
-        with open(hist_path, "r") as f:
+        with open(hist_path) as f:
             hist = json.load(f)
 
     return cnn_model, dbo_model, feat_ext, class_names, dbo_indices, dbo_mask, hist
@@ -902,7 +913,7 @@ elif st.session_state.page == "Disease Recognition":
             st.image(image, caption=img_name, use_container_width=True)
 
     # --- Predict ---
-    if st.button("🚀 Analyze Leaf", type="primary"):
+    if st.button("🚀 Analyze Leaf", type="primary", use_container_width=True):
         if image is None:
             st.error("⚠️ Please provide an image first.")
             st.stop()
@@ -1298,7 +1309,7 @@ elif st.session_state.page == "About":
 
     ### 🛠️ Tech Stack
 
-    - **Models:** TensorFlow / Keras
+    - **Models:** TensorFlow / Keras 3
     - **Optimization:** Custom BDBO (Binary Dung Beetle Optimization)
     - **Frontend:** Streamlit + Plotly
     - **Dataset:** Kaggle — New Plant Diseases Dataset
