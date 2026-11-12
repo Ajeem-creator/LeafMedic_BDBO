@@ -1,0 +1,8 @@
+Timestamp,Image,Prediction,Confidence
+2026-11-04 16:33:03.822976,PotatoEarlyBlight4.JPG,Potato___Early_blight,100.00%
+2026-11-06 11:55:07.140706,TomatoEarlyBlight2.JPG,Tomato___Early_blight,60.31%
+2026-11-06 12:17:25.230211,TomatoEarlyBlight2.JPG,Tomato___Early_blight,60.31%
+2026-11-12 14:48:23.902573,TomatoYellowCurlVirus2.JPG,Tomato___Tomato_Yellow_Leaf_Curl_Virus,99.91%
+2026-11-12 14:48:56.204193,0b8dabb7-5f1b-4fdc-b3fa-30b289707b90___JR_FrgE.S 3047.JPG,Apple___Black_rot,100.00%
+2026-11-12 14:49:30.896170,AppleCedarRust4.JPG,Apple___Cedar_apple_rust,99.99%
+2026-11-12 14:50:44.917929,ajeem.JPG,Tomato___Early_blight,100.00%
