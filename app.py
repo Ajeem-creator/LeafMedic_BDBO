@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import time
 import zipfile
@@ -21,6 +22,12 @@ st.set_page_config(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Recommended runtime: Python 3.11, TensorFlow 2.16.1, Keras 3.3.3.
+if sys.version_info < (3, 11):
+    raise RuntimeError(
+        f"Python 3.11 or newer is required. Current version: {sys.version.split()[0]}"
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Premium CSS
@@ -220,8 +227,8 @@ def load_all():
                 f"Keras version {keras.__version__} is incompatible (Keras 3.0+ required).\n\n"
                 f"The models were trained and saved in Keras 3 (.keras) format, which Keras 2 cannot open.\n\n"
                 f"Currently using Python at:\n{sys.executable}\n\n"
-                f"SOLUTION: Please run Streamlit using Python 3.9 with Keras 3 and a compatible TensorFlow version installed:\n\n"
-                f"& 'C:\\Users\\aalap\\AppData\\Local\\Programs\\Python\\Python39\\python.exe' -m streamlit run app.py"
+                f"SOLUTION: Use Python 3.11 with TensorFlow 2.16.1 and Keras 3.3.3. "
+                f"Activate the Python 3.11 virtual environment, then run: python -m streamlit run app.py"
             )
     except (ValueError, IndexError):
         pass
@@ -240,8 +247,8 @@ def load_all():
     if not os.path.exists(dbo_path):
         dbo_path = dbo_orig
 
-    cnn_model = keras.models.load_model(cnn_path)
-    dbo_model = keras.models.load_model(dbo_path)
+    cnn_model = keras.models.load_model(cnn_path, compile=False)
+    dbo_model = keras.models.load_model(dbo_path, compile=False)
 
     # Build feature extractor (256‑D GAP layer)
     feat_layer = None
@@ -260,16 +267,20 @@ def load_all():
         )
     feat_ext = keras.models.Model(inputs=cnn_model.input, outputs=feat_layer.output)
 
-    with open(os.path.join(BASE_DIR, "class_names.json")) as f:
+    with open(os.path.join(BASE_DIR, "class_names.json"), "r", encoding="utf-8") as f:
         class_names = json.load(f)
 
-    dbo_indices = np.load(os.path.join(BASE_DIR, "DBO_feature_indices.npy"))
-    dbo_mask = np.load(os.path.join(BASE_DIR, "DBO_feature_mask.npy"))
+    dbo_indices = np.asarray(
+        np.load(os.path.join(BASE_DIR, "DBO_feature_indices.npy"))
+    ).reshape(-1).astype(np.int64)
+    dbo_mask = np.asarray(
+        np.load(os.path.join(BASE_DIR, "DBO_feature_mask.npy"))
+    ).reshape(-1)
 
     hist_path = os.path.join(BASE_DIR, "training_hist (1).json")
     hist = {}
     if os.path.exists(hist_path):
-        with open(hist_path) as f:
+        with open(hist_path, "r", encoding="utf-8") as f:
             hist = json.load(f)
 
     return cnn_model, dbo_model, feat_ext, class_names, dbo_indices, dbo_mask, hist
@@ -706,8 +717,25 @@ def predict_both(img_pil):
     # CNN + BDBO
     t1 = time.perf_counter()
     feat = FEAT_EXT.predict(arr, verbose=0)
+
+    if DBO_IDX.size == 0:
+        raise RuntimeError("DBO_feature_indices.npy is empty; cannot run CNN+BDBO inference.")
+    if np.any(DBO_IDX < 0) or np.any(DBO_IDX >= feat.shape[1]):
+        raise RuntimeError(
+            "DBO feature indices are outside the feature extractor output range. "
+            f"Feature width: {feat.shape[1]}, index range: "
+            f"{int(DBO_IDX.min())}..{int(DBO_IDX.max())}."
+        )
+
     dbo_p = DBO.predict(feat[:, DBO_IDX], verbose=0)[0]
     t_dbo = (time.perf_counter() - t1) * 1000
+
+    if len(CLASS_NAMES) != len(cnn_p) or len(CLASS_NAMES) != len(dbo_p):
+        raise RuntimeError(
+            "Model output dimensions do not match class_names.json: "
+            f"{len(CLASS_NAMES)} classes, CNN output {len(cnn_p)}, "
+            f"CNN+BDBO output {len(dbo_p)}."
+        )
 
     return {
         "cnn_idx": int(np.argmax(cnn_p)),
@@ -1191,9 +1219,11 @@ elif st.session_state.page == "Model Performance":
     # Feature Mask
     st.markdown("#### 🪲 BDBO Feature Selection Mask (256 Dimensions)")
     st.markdown("Green = Retained (107), Gray = Pruned (149)")
-    colors = ["#10b981" if m else "#cbd5e1" for m in DBO_MASK]
-    fig_m = go.Figure(go.Bar(x=list(range(256)), y=[1]*256, marker_color=colors,
-                             hovertext=[f"#{i}: {'KEEP' if m else 'PRUNE'}" for i,m in enumerate(DBO_MASK)],
+    mask_values = np.asarray(DBO_MASK).reshape(-1)
+    mask_size = len(mask_values)
+    colors = ["#10b981" if bool(m) else "#cbd5e1" for m in mask_values]
+    fig_m = go.Figure(go.Bar(x=list(range(mask_size)), y=[1] * mask_size, marker_color=colors,
+                             hovertext=[f"#{i}: {'KEEP' if bool(m) else 'PRUNE'}" for i, m in enumerate(mask_values)],
                              hoverinfo="text"))
     fig_m.update_layout(height=180, margin=dict(l=20,r=20,t=10,b=30),
                         yaxis=dict(visible=False), xaxis_title="Feature Index",
@@ -1201,7 +1231,7 @@ elif st.session_state.page == "Model Performance":
     st.plotly_chart(fig_m, use_container_width=True)
 
     # Training Curves
-    if HIST and "accuracy" in HIST:
+    if HIST and "accuracy" in HIST and "loss" in HIST:
         st.markdown("#### 📈 Training History")
         epochs = list(range(1, len(HIST["accuracy"])+1))
         c1, c2 = st.columns(2)
